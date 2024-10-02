@@ -6,7 +6,7 @@ import { connect } from 'cloudflare:sockets';
 // [Windows] Press "Win + R", input cmd and run:  Powershell -NoExit -Command "[guid]::NewGuid()"
 let userID = '90cd4a77-141a-43c9-991b-08263cfe9c10';
 
-let proxyIP = '';// 小白勿动，该地址并不影响你的网速，这是给CF代理使用的。'cdn.xn--b6gac.eu.org, cdn-all.xn--b6gac.eu.org, workers.cloudflare.cyou'
+let proxyIP = '';// 小白勿动，该地址并不影响你的网速，这是给CF代理使用的。'cdn.xn--b6gac.eu.org, cdn-all.xn--b6gac.eu.org'
 
 let sub = '';// 避免项目被滥用，现已取消内置订阅器
 let subconverter = 'SUBAPI.fxxk.dedyn.io';// clash订阅转换后端，目前使用CM的订阅转换功能。自带虚假uuid和host订阅。
@@ -148,45 +148,14 @@ export default {
 				// const url = new URL(request.url);
 				switch (url.pathname.toLowerCase()) {
 				case '/':
-					const envKey = env.URL302 ? 'URL302' : (env.URL ? 'URL' : null);
-					if (envKey) {
-						const URLs = await ADD(env[envKey]);
-						const URL = URLs[Math.floor(Math.random() * URLs.length)];
-						return envKey === 'URL302' ? Response.redirect(URL, 302) : fetch(new Request(URL, request));
-					}
-					return new Response(JSON.stringify(request.cf, null, 4), { status: 200 });
+					if (env.URL302) return Response.redirect(env.URL302, 302);
+					else if (env.URL) return await proxyURL(env.URL, url);
+					else return new Response(JSON.stringify(request.cf, null, 4), { status: 200 });
 				case `/${fakeUserID}`:
 					const fakeConfig = await getVLESSConfig(userID, request.headers.get('Host'), sub, 'CF-Workers-SUB', RproxyIP, url);
 					return new Response(`${fakeConfig}`, { status: 200 });
 				case `/${userID}`: {
 					await sendMessage(`#获取订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${UA}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
-					if ((!sub || sub == '') && (addresses.length + addressesapi.length + addressesnotls.length + addressesnotlsapi.length + addressescsv.length) == 0){
-						addresses = [
-							'Join.my.Telegram.channel.CMLiussss.to.unlock.more.premium.nodes.cf.090227.xyz#加入我的频道t.me/CMLiussss解锁更多优选节点',
-							'visa.cn:443',
-							'www.visa.com:8443',
-							'cis.visa.com:2053',
-							'africa.visa.com:2083',
-							'www.visa.com.sg:2087',
-							'www.visaeurope.at:2096',
-							'www.visa.com.mt:8443',
-							'qa.visamiddleeast.com',
-							'time.is',
-							'www.wto.org:8443',
-							'chatgpt.com:2087',
-							'icook.hk',
-							//'104.17.0.0#IPv4',
-							'[2606:4700::]#IPv6'
-						];
-						if (request.headers.get('Host').includes(".workers.dev")) addressesnotls = [
-							'usa.visa.com:2095',
-							'myanmar.visa.com:8080',
-							'www.visa.com.tw:8880',
-							'www.visaeurope.ch:2052',
-							'www.visa.com.br:2082',
-							'www.visasoutheasteurope.com:2086'
-						];
-					}
 					const vlessConfig = await getVLESSConfig(userID, request.headers.get('Host'), sub, UA, RproxyIP, url);
 					const now = Date.now();
 					//const timestamp = Math.floor(now / 1000);
@@ -235,7 +204,9 @@ export default {
 					}
 				}
 				default:
-					return new Response('Not found', { status: 404 });
+					if (env.URL302) return Response.redirect(env.URL302, 302);
+					else if (env.URL) return await proxyURL(env.URL, url);
+					else return new Response('不用怀疑！你UUID就是错的！！！', { status: 404 });
 				}
 			} else {
 				proxyIP = url.searchParams.get('proxyip') || proxyIP;
@@ -441,7 +412,15 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
 			tcpSocket = await connectAndWrite(addressRemote, portRemote, true);
 		} else {
 			// 否则，尝试使用预设的代理 IP（如果有）或原始地址重试连接
-			if (!proxyIP || proxyIP == '') proxyIP = atob('cHJveHlpcC5meHhrLmRlZHluLmlv');
+			if (!proxyIP || proxyIP == '') {
+				proxyIP = atob('cHJveHlpcC5meHhrLmRlZHluLmlv');
+			} else if (proxyIP.includes(']:')) {
+				portRemote = proxyIP.split(']:')[1] || portRemote;
+				proxyIP = proxyIP.split(']:')[0] || proxyIP;
+			} else if (proxyIP.split(':').length === 2) {
+				portRemote = proxyIP.split(':')[1] || portRemote;
+				proxyIP = proxyIP.split(':')[0] || proxyIP;
+			}
 			tcpSocket = await connectAndWrite(proxyIP || addressRemote, portRemote);
 		}
 		// 无论重试是否成功，都要关闭 WebSocket（可能是为了重新建立连接）
@@ -1222,6 +1201,76 @@ async function ADD(envadd) {
 	return add;
 }
 
+async function proxyURL(proxyURL, url) {
+	const URLs = await ADD(proxyURL);
+	const fullURL = URLs[Math.floor(Math.random() * URLs.length)];
+
+	// 解析目标 URL
+	let parsedURL = new URL(fullURL);
+	console.log(parsedURL);
+	// 提取并可能修改 URL 组件
+	let URLProtocol = parsedURL.protocol.slice(0, -1) || 'https';
+	let URLHostname = parsedURL.hostname;
+	let URLPathname = parsedURL.pathname;
+	let URLSearch = parsedURL.search;
+
+	// 处理 pathname
+	if (URLPathname.charAt(URLPathname.length - 1) == '/') {
+		URLPathname = URLPathname.slice(0, -1);
+	}
+	URLPathname += url.pathname;
+
+	// 构建新的 URL
+	let newURL = `${URLProtocol}://${URLHostname}${URLPathname}${URLSearch}`;
+
+	// 反向代理请求
+	let response = await fetch(newURL);
+
+	// 创建新的响应
+	let newResponse = new Response(response.body, {
+		status: response.status,
+		statusText: response.statusText,
+		headers: response.headers
+	});
+
+	// 添加自定义头部，包含 URL 信息
+	//newResponse.headers.set('X-Proxied-By', 'Cloudflare Worker');
+	//newResponse.headers.set('X-Original-URL', fullURL);
+	newResponse.headers.set('X-New-URL', newURL);
+
+	return newResponse;
+}
+
+function checkSUB(host) {
+	if ((!sub || sub == '') && (addresses.length + addressesapi.length + addressesnotls.length + addressesnotlsapi.length + addressescsv.length) == 0){
+		addresses = [
+			'Join.my.Telegram.channel.CMLiussss.to.unlock.more.premium.nodes.cf.090227.xyz#加入我的频道t.me/CMLiussss解锁更多优选节点',
+			'visa.cn:443',
+			'www.visa.com:8443',
+			'cis.visa.com:2053',
+			'africa.visa.com:2083',
+			'www.visa.com.sg:2087',
+			'www.visaeurope.at:2096',
+			'www.visa.com.mt:8443',
+			'qa.visamiddleeast.com',
+			'time.is',
+			'www.wto.org:8443',
+			'chatgpt.com:2087',
+			'icook.hk',
+			//'104.17.0.0#IPv4',
+			'[2606:4700::]#IPv6'
+		];
+		if (host.includes(".workers.dev")) addressesnotls = [
+			'usa.visa.com:2095',
+			'myanmar.visa.com:8080',
+			'www.visa.com.tw:8880',
+			'www.visaeurope.ch:2052',
+			'www.visa.com.br:2082',
+			'www.visasoutheasteurope.com:2086'
+		];
+	}
+}
+
 const 啥啥啥_写的这是啥啊 = 'dmxlc3M=';
 function 配置信息(UUID, 域名地址) {
 	const 协议类型 = atob(啥啥啥_写的这是啥啊);
@@ -1275,6 +1324,7 @@ let subParams = ['sub','base64','b64','clash','singbox','sb'];
  * @returns {Promise<string>}
  */
 async function getVLESSConfig(userID, hostName, sub, UA, RproxyIP, _url) {
+	checkSUB(hostName);
 	const userAgent = UA.toLowerCase();
 	const Config = 配置信息(userID , hostName);
 	const v2ray = Config[0];
@@ -1680,7 +1730,7 @@ function subAddresses(host,UUID,noTLS,newAddressesapi,newAddressescsv,newAddress
 		const uniqueAddressesnotls = [...new Set(addressesnotls)];
 
 		notlsresponseBody = uniqueAddressesnotls.map(address => {
-			let port = "80";
+			let port = "-1";
 			let addressid = address;
 		
 			const match = addressid.match(regex);
@@ -1711,7 +1761,7 @@ function subAddresses(host,UUID,noTLS,newAddressesapi,newAddressescsv,newAddress
 			}
 
 			const httpPorts = ["8080","8880","2052","2082","2086","2095"];
-			if (!isValidIPv4(address) && port == "80") {
+			if (!isValidIPv4(address) && port == "-1") {
 				for (let httpPort of httpPorts) {
 					if (address.includes(httpPort)) {
 						port = httpPort;
@@ -1719,6 +1769,7 @@ function subAddresses(host,UUID,noTLS,newAddressesapi,newAddressescsv,newAddress
 					}
 				}
 			}
+			if (port == "-1") port = "80";
 			
 			let 伪装域名 = host ;
 			let 最终路径 = '/?ed=2560' ;
@@ -1737,7 +1788,7 @@ function subAddresses(host,UUID,noTLS,newAddressesapi,newAddressescsv,newAddress
 	const uniqueAddresses = [...new Set(addresses)];
 
 	const responseBody = uniqueAddresses.map(address => {
-		let port = "443";
+		let port = "-1";
 		let addressid = address;
 
 		const match = addressid.match(regex);
@@ -1768,7 +1819,7 @@ function subAddresses(host,UUID,noTLS,newAddressesapi,newAddressescsv,newAddress
 		}
 
 		const httpsPorts = ["2053","2083","2087","2096","8443"];
-		if (!isValidIPv4(address) && port == "443") {
+		if (!isValidIPv4(address) && port == "-1") {
 			for (let httpsPort of httpsPorts) {
 				if (address.includes(httpsPort)) {
 					port = httpsPort;
@@ -1776,6 +1827,7 @@ function subAddresses(host,UUID,noTLS,newAddressesapi,newAddressescsv,newAddress
 				}
 			}
 		}
+		if (port == "-1") port = "443";
 		
 		let 伪装域名 = host ;
 		let 最终路径 = '/?ed=2560' ;
